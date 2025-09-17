@@ -148,26 +148,27 @@ footer{opacity:.8;text-align:center;padding:2rem 0}
 
   <div class="container">
     <!-- ===== Login ===== -->
-    <section id="viewLogin" class="login-wrap">
-      <div class="card" style="min-width:320px;max-width:420px">
-        <div class="brand-preview">
-          <img id="logoLogin" class="logo" alt="logo">
-          <div>
-            <div style="font-weight:800" id="salonNameLogin">Cynthia's Salon LLC</div>
-            <small style="opacity:.7">Acceso</small>
-          </div>
-        </div>
-        <hr>
-        <label>Usuario</label>
-        <input id="loginUser" placeholder="usuario">
-        <label>Contraseña</label>
-        <input id="loginPass" type="password" placeholder="••••••">
-        <div class="row" style="margin-top:.7rem">
-          <button class="btn ok" id="btnDoLogin">Ingresar</button>
-          <span class="kbd"> Ingresa tus datos:</span>
-        </div>
+   <section id="viewLogin" class="login-wrap">
+  <div class="card" style="min-width:320px;max-width:420px">
+    <div class="brand-preview" style="display:flex;align-items:center;gap:.7rem">
+      <img id="logoLogin" class="logo" alt="logo">
+      <div>
+        <div style="font-weight:800" id="salonNameLogin">Cynthia's Salon LLC</div>
+        <small style="opacity:.7">Acceso</small>
       </div>
-    </section>
+    </div>
+    <hr>
+    <label>Usuario</label>
+    <input id="loginUser" placeholder="usuario" autocomplete="username">
+    <label>Contraseña</label>
+    <input id="loginPass" type="password" placeholder="••••••" autocomplete="current-password">
+    <div class="row" style="margin-top:.7rem">
+      <button class="btn ok" id="btnDoLogin">Ingresar</button>
+      <span class="kbd">Usuarios demo: <b>admin/admin</b> o <b>user/user</b></span>
+    </div>
+  </div>
+</section>
+
 
     <!-- ===== Menú principal ===== -->
     <section id="viewMenu" class="hidden">
