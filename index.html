@@ -566,6 +566,74 @@ const state = {
 function persistAll(){
   ['cfg','users','menu','techs','services','appointments','invoices','noshows','logs','lastInvId','chartMode'].forEach(k=>S.save(k,state[k]));
 }
+  /* ==== Sincronización multi-pestaña ==== */
+const CHANNEL_NAME = 'salon_sync';
+const bc = ('BroadcastChannel' in window) ? new BroadcastChannel(CHANNEL_NAME) : null;
+
+function reloadFromStorage(keys=null){
+  // Si keys es null, recarga todo lo importante
+  const K = keys || ['cfg','users','menu','techs','services','appointments','invoices','noshows','logs','lastInvId','chartMode','session'];
+  if(K.includes('session'))       state.session = S.load('session', state.session);
+  if(K.includes('cfg'))           state.cfg     = S.load('cfg', state.cfg);
+  if(K.includes('users'))         state.users   = S.load('users', state.users);
+  if(K.includes('menu'))          state.menu    = S.load('menu', state.menu);
+  if(K.includes('techs'))         state.techs   = S.load('techs', state.techs);
+  if(K.includes('services'))      state.services= S.load('services', state.services);
+  if(K.includes('appointments'))  state.appointments = S.load('appointments', state.appointments);
+  if(K.includes('invoices'))      state.invoices     = S.load('invoices', state.invoices);
+  if(K.includes('noshows'))       state.noshows      = S.load('noshows', state.noshows);
+  if(K.includes('logs'))          state.logs         = S.load('logs', state.logs);
+  if(K.includes('lastInvId'))     state.lastInvId    = S.load('lastInvId', state.lastInvId);
+  if(K.includes('chartMode'))     state.chartMode    = S.load('chartMode', state.chartMode);
+}
+
+function rerenderActiveView(){
+  applyTheme();
+  refreshTechs();
+  refreshServices();
+  renderLogsTable();
+  // Re-render según la vista visible
+  const current = ['viewLogin','viewMenu','viewAgenda','viewBilling','viewAnalytics','viewConfig','viewBackups']
+    .find(v => !document.getElementById(v).classList.contains('hidden'));
+  if(current==='viewMenu')       buildMenu();
+  if(current==='viewAgenda')     { renderCalendar(); renderApTable(); renderSlots(); }
+  if(current==='viewBilling')    renderBilling();
+  if(current==='viewAnalytics')  renderAnalytics();
+  if(current==='viewConfig')     renderConfig();
+  if(current==='viewBackups')    renderBackups();
+}
+
+/* 1) Propagación por localStorage: todas las pestañas reciben este evento */
+window.addEventListener('storage', (e)=>{
+  if(!e.key || !e.key.startsWith('salon.')) return;
+  // Sólo recargar la(s) key(s) que cambió/cambiaron
+  const k = e.key.replace('salon.','');
+  reloadFromStorage([k]);
+  rerenderActiveView();
+});
+
+/* 2) Propagación en tiempo real: BroadcastChannel */
+if(bc){
+  bc.onmessage = (ev)=>{
+    const msg = ev.data||{};
+    if(msg.type==='storage:changed'){
+      // Releer desde localStorage solo las claves indicadas
+      reloadFromStorage(msg.keys && msg.keys.length ? msg.keys : null);
+      rerenderActiveView();
+    }
+    if(msg.type==='state:patch'){
+      // Si mandan un "patch" directo (opcional)
+      Object.assign(state, msg.patch||{});
+      persistAll(); // guarda y volverá a notificar
+      rerenderActiveView();
+    }
+  };
+}
+
+/* Pequeño helper para notificar a otras pestañas (usado por persistAll) */
+function broadcastChanged(keys){
+  if(bc) bc.postMessage({ type:'storage:changed', keys });
+}
 
 /* ====== Theming / Branding ====== */
 function applyTheme(){
@@ -665,7 +733,20 @@ function buildMenu(){
         const to=state.menu.findIndex(x=>x.view===m.view);
         const [moved]=state.menu.splice(from,1);
         state.menu.splice(to,0,moved);
-        persistAll(); buildMenu();
+        function persistAll(){
+  const keys=['cfg','users','menu','techs','services','appointments','invoices','noshows','logs','lastInvId','chartMode','session'];
+  keys.forEach(k=>S.save(k, state[k]));
+  // Notificar a otras pestañas que estas keys cambiaron
+  broadcastChanged(keys);
+}
+// 1) mismo canal
+const bc = ('BroadcastChannel' in window) ? new BroadcastChannel('salon_sync') : null;
+function broadcastChanged(keys){ if(bc) bc.postMessage({type:'storage:changed', keys}); }
+
+// 2) después de guardar en localStorage:
+S.save('invoices', state.invoices);
+broadcastChanged(['invoices']);
+
       });
       mo.appendChild(li);
     });
