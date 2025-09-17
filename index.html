@@ -807,25 +807,66 @@ footer{opacity:.8;text-align:center;padding:2rem 0}
     </section>
 
 <script>
-/* ====== Utilidades y estado ====== */
-const S = {
-  key:k=>`salon.${k}`,
-  load:(k,def)=>{try{return JSON.parse(localStorage.getItem(S.key(k))) ?? def}catch{return def}},
-  save:(k,v)=>localStorage.setItem(S.key(k),JSON.stringify(v)),
-  uid:()=>Math.random().toString(36).slice(2),
-  today:()=>new Date().toISOString().slice(0,10),
-  nowTime:()=>new Date().toTimeString().slice(0,5),
-  pad:n=>n.toString().padStart(2,'0'),
-  toLocalDateTimeStr:(d)=>`${d.getFullYear()}-${S.pad(d.getMonth()+1)}-${S.pad(d.getDate())} ${S.pad(d.getHours())}:${S.pad(d.getMinutes())}`,
-  csv:(rows)=>rows.map(r=>r.map(x=>`"${(x??'').toString().replace(/"/g,'""')}"`).join(',')).join('\n'),
-  download:(name,content,type='application/json')=>{
-    const a=document.createElement('a');
-    a.href=URL.createObjectURL(new Blob([content],{type}));a.download=name;a.click();URL.revokeObjectURL(a.href);
-  },
-  notify:(msg)=>{console.log(msg); alert(msg)},
-  isSameDay:(a,b)=>a.toISOString().slice(0,10)===b.toISOString().slice(0,10),
-  addDays:(d, n)=>{const x=new Date(d);x.setDate(x.getDate()+n);return x}
-};
+/************ LOGIN MINIMAL FUNCIONAL (hotfix) ************/
+(function(){
+  const P='salon.';
+  const S={
+    key:k=>P+k,
+    load:(k,def)=>{try{const v=localStorage.getItem(P+k);return v?JSON.parse(v):def}catch{return def}},
+    save:(k,v)=>localStorage.setItem(P+k,JSON.stringify(v)),
+    notify:(m)=>{console.log(m); alert(m)}
+  };
+  const state={
+    users: S.load('users',[{user:'admin',pass:'admin',role:'admin'},{user:'user',pass:'user',role:'user'}]),
+    session: S.load('session', null)
+  };
+
+  function show(id){
+    document.querySelectorAll('section').forEach(s=>s.classList.add('hidden'));
+    const el=document.getElementById(id); if(el) el.classList.remove('hidden');
+  }
+  function toMenu(){ show('viewMenu'); }
+
+  function applyBrand(){
+    const brandEl=document.getElementById('salonName');
+    const brandLogin=document.getElementById('salonNameLogin');
+    if(brandEl) brandEl.textContent = 'Mi Salón';
+    if(brandLogin) brandLogin.textContent = 'Mi Salón';
+  }
+
+  function login(u,p){
+    if(!u||!p) return S.notify('Ingresa usuario y contraseña');
+    const found=(state.users||[]).find(x=>x.user===u && x.pass===p);
+    if(!found) return S.notify('Usuario o contraseña incorrectos');
+    state.session={user:found.user,role:found.role,ts:Date.now()};
+    S.save('session',state.session);
+    toMenu();
+  }
+  function logout(){
+    state.session=null; S.save('session',null); show('viewLogin');
+  }
+
+  // Wire UI
+  document.getElementById('btnDoLogin')?.addEventListener('click',()=>login(
+    document.getElementById('loginUser')?.value?.trim(),
+    document.getElementById('loginPass')?.value
+  ));
+  // Enter para enviar
+  ['loginUser','loginPass'].forEach(id=>{
+    document.getElementById(id)?.addEventListener('keydown',e=>{
+      if(e.key==='Enter') document.getElementById('btnDoLogin').click();
+    });
+  });
+  document.getElementById('btnDashboard')?.addEventListener('click', toMenu);
+  document.getElementById('btnLogout')?.addEventListener('click', logout);
+
+  // Init
+  applyBrand();
+  if(state.session){ toMenu(); } else { show('viewLogin'); }
+})();
+/************ FIN HOTFIX LOGIN ************/
+</script>
+
 /* ====== Estado inicial ====== */
 const state = {
   session: S.load('session', null),
