@@ -744,6 +744,94 @@ const download = (filename, content, type='text/plain')=>{
   a.href=URL.createObjectURL(new Blob([content],{type}));
   a.download=filename; a.click(); URL.revokeObjectURL(a.href);
 };
+   <script>
+// ========== GOOGLE FORM PATCH (usa tus entry.xxxxx reales) ==========
+
+// 1) Asegurar URL formResponse + mapping (solo si no existe aún)
+function ensureDefaults_patchFormIDs(){
+  const cfg = load(K.CFG, {}) || {};
+  // URL "formResponse" de TU formulario (no la de "viewform")
+  cfg.formUrl = cfg.formUrl || "https://docs.google.com/forms/d/e/1FAIpQLSf1UXh09WVyDvNF0tvzPEUQGsArmm81Ice53xoWgzpY-8Ae8g/formResponse";
+  cfg.formMap = cfg.formMap || {
+    nombre:   "entry.126099183",
+    tel:      "entry.885012759",
+    fecha:    "entry.2059036119", // espera mm/dd/yy
+    hora:     "entry.805023101",  // espera 24h "HH:MM"
+    servicio: "entry.1764664020",
+    tecnica:  "entry.1003942216",
+    correo:   "entry.1481210954"
+  };
+  save(K.CFG, cfg);
+}
+
+// 2) Conversión de fecha (yyyy-mm-dd -> mm/dd/yy)
+function toMMDDYY(iso){ // "2025-12-12" -> "12/12/25"
+  if(!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso;
+  const [y,m,d] = iso.split('-');
+  return `${m}/${d}/${y.slice(2)}`;
+}
+
+// 3) Reemplaza tu citaGoogle() por esta versión
+async function citaGoogle(){
+  const cfg=load(K.CFG,{});
+  if(!cfg.formUrl){ alert('Configura la URL de formResponse en Configuración.'); return; }
+  const m=cfg.formMap||{};
+  const required = ['nombre','tel','fecha','hora','servicio','tecnica','correo'];
+  if(!required.every(k=>m[k] && m[k].startsWith('entry.'))){
+    alert('Faltan IDs entry.xxxxx en el mapping de Google Form.');
+    return;
+  }
+
+  const nombre=byId('a_nombre').value.trim();
+  const tel=byId('a_tel').value.trim();
+  const emp=byId('a_emp').value; // id interno
+  const srv=byId('a_srv').value.trim();
+  const fechaISO=byId('a_fecha').value;   // yyyy-mm-dd
+  const hora24=byId('a_hora').value;      // HH:MM (24h)
+  const notas=byId('a_notas').value.trim();
+
+  if(!nombre||!tel||!emp||!fechaISO||!hora24){
+    alert('Completa nombre, teléfono, empleado, fecha y hora.');
+    return;
+  }
+
+  // Nombre visible de la técnica (desde empleados)
+  const emps=load(K.EMP,[]); 
+  const empName=(emps.find(e=>e.id===emp)||{}).nombre||'';
+
+  // Tu Form espera fecha "mm/dd/yy" y hora "HH:MM" (24h) según el prefill que pasaste
+  const fechaForm = toMMDDYY(fechaISO);
+  const horaForm  = hora24;
+
+  // Si también quieres mandar notas y no hay campo en el Form, puedes crear uno y mapearlo aquí
+  const payload = new URLSearchParams({
+    [m.nombre]:   nombre,
+    [m.tel]:      tel,
+    [m.fecha]:    fechaForm,
+    [m.hora]:     horaForm,
+    [m.servicio]: srv,
+    [m.tecnica]:  empName,
+    [m.correo]:   "" // deja vacío si no capturas correo en la pantalla
+  });
+
+  try{
+    await fetch(cfg.formUrl, { method:'POST', body:payload, mode:'no-cors' });
+    alert('Cita enviada a Google Form correctamente.');
+  }catch(e){
+    console.error(e);
+    alert('Error enviando al Form. Revisa la URL y los entry.xxxxx');
+  }
+}
+
+// 4) Enganche en boot() SIN romper tu boot original
+const __boot__orig = window.boot;
+window.boot = function(){
+  ensureDefaults();             // ya lo tienes
+  ensureDefaults_patchFormIDs();// <-- añade mapping + formResponse si faltan
+  __boot__orig();               // continúa flujo normal de tu app
+};
+</script>
+
 
 /* ============================================================
    ESTADO INICIAL / DEMO USERS
