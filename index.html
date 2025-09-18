@@ -1321,10 +1321,204 @@ function analyticsChart30(){
 }
 
 /* ============================================================
-   INICIO
+   LOGIN (parche fiable) + NAV POR ROL
+   ============================================================ */
+function loginEnsureUsers(){
+  let users = load(K.USERS, null);
+  if(!Array.isArray(users) || users.length===0){
+    users = [
+      {user:'admin',   pass:'admin123', role:'admin'},
+      {user:'usuario', pass:'user123',  role:'usuario'}
+    ];
+    save(K.USERS, users);
+  }
+}
+function login(user, pass){
+  loginEnsureUsers();
+  const users=load(K.USERS,[]);
+  const u=users.find(x=>x.user===user && x.pass===pass);
+  if(!u) return false;
+  save(K.SESSION,{user:u.user, role:u.role, ts:Date.now()});
+  const av=byId('whoami'); if(av) av.title=`${u.user} (${u.role})`;
+  return true;
+}
+function logout(){
+  localStorage.removeItem(K.SESSION);
+  show('screen-login');
+}
+// show con control por rol (usuario: solo agenda y facturación)
+function show(id){
+  $$('.screen').forEach(s=>s.classList.remove('active'));
+  byId(id).classList.add('active');
+  const ses = load(K.SESSION);
+  const adminOnly = ['screen-export','screen-analytics','screen-empleados','screen-config'];
+  adminOnly.forEach(h=>{
+    const el=byId(h); if(!el) return;
+    if(ses?.role==='usuario') el.classList.add('hidden'); else el.classList.remove('hidden');
+  });
+}
+
+/* ============================================================
+   GOOGLE FORM PATCH (usa tus entry.xxxxx reales)
+   ============================================================ */
+// Usa tu formulario real (formResponse) + mapping desde tu prefill
+function ensureDefaults_patchFormIDs(){
+  const cfg = load(K.CFG, {}) || {};
+  cfg.formUrl = cfg.formUrl || "https://docs.google.com/forms/d/e/1FAIpQLSf1UXh09WVyDvNF0tvzPEUQGsArmm81Ice53xoWgzpY-8Ae8g/formResponse";
+  cfg.formMap = cfg.formMap || {
+    nombre:   "entry.126099183",
+    tel:      "entry.885012759",
+    fecha:    "entry.2059036119", // mm/dd/yy
+    hora:     "entry.805023101",  // HH:MM (24h)
+    servicio: "entry.1764664020",
+    tecnica:  "entry.1003942216",
+    correo:   "entry.1481210954"
+  };
+  save(K.CFG, cfg);
+}
+// yyyy-mm-dd -> mm/dd/yy (lo que pide tu Form)
+function toMMDDYY(iso){
+  if(!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso;
+  const [y,m,d] = iso.split('-');
+  return `${m}/${d}/${y.slice(2)}`;
+}
+// Enviar cita al Form con tu mapping
+async function citaGoogle(){
+  const cfg=load(K.CFG,{});
+  if(!cfg.formUrl){ alert('Configura la URL de formResponse.'); return; }
+  const m=cfg.formMap||{};
+  const nombre=byId('a_nombre').value.trim();
+  const tel=byId('a_tel').value.trim();
+  const emp=byId('a_emp').value;
+  const srv=byId('a_srv').value.trim();
+  const fechaISO=byId('a_fecha').value;
+  const hora24=byId('a_hora').value;
+  if(!nombre||!tel||!emp||!fechaISO||!hora24){ alert('Completa nombre, teléfono, empleado, fecha y hora.'); return; }
+  const emps=load(K.EMP,[]); 
+  const empName=(emps.find(e=>e.id===emp)||{}).nombre||'';
+  const payload = new URLSearchParams({
+    [m.nombre]:   nombre,
+    [m.tel]:      tel,
+    [m.fecha]:    toMMDDYY(fechaISO),
+    [m.hora]:     hora24,
+    [m.servicio]: srv,
+    [m.tecnica]:  empName,
+    [m.correo]:   "" // si no usas correo en pantalla, queda vacío
+  });
+  try{
+    await fetch(cfg.formUrl,{method:'POST', body:payload, mode:'no-cors'});
+    alert('Cita enviada a Google Form.');
+  }catch(e){ console.error(e); alert('Error enviando al Form.'); }
+}
+
+/* ============================================================
+   EVENTOS UI (login handler actualizado)
+   ============================================================ */
+function bindUI(){
+  // navegación topbar
+  byId('btnHome').onclick = ()=>show('screen-home');
+  byId('btnConfig').onclick=()=>show('screen-config');
+  byId('btnLogout').onclick=()=>{logout();};
+
+  // botones de tarjetas
+  $$('[data-goto]').forEach(b=> b.onclick=()=> show(b.dataset.goto));
+
+  // LOGIN (handler nuevo + Enter)
+  byId('doLogin').onclick = ()=>{
+    const u = byId('loginUser').value.trim();
+    const p = byId('loginPass').value.trim();
+    const ok = login(u, p);
+    if(!ok){
+      alert('Credenciales inválidas. Usa admin/admin123 o usuario/user123');
+      return;
+    }
+    show('screen-home');
+  };
+  ['loginUser','loginPass'].forEach(id=>{
+    const el=byId(id);
+    el && el.addEventListener('keydown', e=>{
+      if(e.key==='Enter') byId('doLogin').click();
+    });
+  });
+
+  // EMPLEADOS
+  byId('btnEmpGuardar')?.addEventListener('click', empSave);
+  byId('btnEmpLimpiar')?.addEventListener('click', ()=>{ 
+    byId('e_nombre').value=''; byId('e_tel').value=''; byId('e_activo').value='1'; 
+    delete byId('btnEmpGuardar').dataset.id; 
+  });
+
+  // AGENDA
+  byId('btnAgendaGuardar')?.addEventListener('click', citaGuardar);
+  byId('btnAgendaNoShow')?.addEventListener('click', citaNoShow);
+  byId('btnAgendaFiltrar')?.addEventListener('click', ()=>renderCitas(true));
+  byId('btnAgendaWhatsApp')?.addEventListener('click', ()=>{
+    const temp={id:'temp', nombre:byId('a_nombre').value, tel:byId('a_tel').value, emp:byId('a_emp').value, srv:byId('a_srv').value, fecha:byId('a_fecha').value, hora:byId('a_hora').value, notas:byId('a_notas').value};
+    load(K.CITAS,[]).push(temp); save(K.CITAS,load(K.CITAS,[])); citaWhatsApp('temp');
+    save(K.CITAS, load(K.CITAS,[]).filter(x=>x.id!=='temp'));
+  });
+  byId('btnAgendaGoogle')?.addEventListener('click', citaGoogle);
+  byId('btnAgendaImprimir')?.addEventListener('click', ()=>window.print());
+
+  // FACTURACIÓN
+  byId('btnAddLinea')?.addEventListener('click', ()=>lineaAdd());
+  byId('btnLoadServicios')?.addEventListener('click', ()=>renderServicios());
+  byId('f_ivu')?.addEventListener('input', recalcFactura);
+  byId('btnFacturaGuardar')?.addEventListener('click', facturaGuardar);
+  byId('btnFacturaExportCSV')?.addEventListener('click', ()=>{ const n=byId('f_num').value; if(!n) return alert('Guarda primero.'); factCSV(n); });
+  byId('btnFacturaExportPDF')?.addEventListener('click', ()=>{ const n=byId('f_num').value; if(!n) return alert('Guarda primero.'); factImprimir(n); });
+  byId('btnFacturaWhatsApp')?.addEventListener('click', ()=>{ const n=byId('f_num').value; if(!n) return alert('Guarda primero.'); factWA(n); });
+  byId('btnHistFiltrar')?.addEventListener('click', renderFacturas);
+
+  // EXPORTACIONES
+  byId('ex_periodo')?.addEventListener('change', ()=>{
+    const isR=byId('ex_periodo').value==='rango';
+    byId('ex_rango_wrap').style.display=isR?'grid':'none';
+  });
+  byId('btnExportCSV')?.addEventListener('click', exportCSV);
+  byId('btnExportPrint')?.addEventListener('click', exportPrint);
+
+  // SERVICIOS
+  byId('btnSvAgregar')?.addEventListener('click', ()=>{
+    const id=byId('btnSvAgregar').dataset.id;
+    if(id){
+      const sv=load(K.SVC,[]).map(s=> s.id===id ? {...s, nombre:byId('sv_nombre').value.trim(), precio:+byId('sv_precio').value||0} : s);
+      save(K.SVC,sv); delete byId('btnSvAgregar').dataset.id;
+      byId('sv_nombre').value=''; byId('sv_precio').value='';
+      renderServicios();
+    }else{
+      const nombre=byId('sv_nombre').value.trim();
+      const precio=+byId('sv_precio').value||0;
+      if(!nombre) return alert('Nombre requerido');
+      const sv=load(K.SVC,[]); sv.push({id:uuid(), nombre, precio}); save(K.SVC,sv);
+      byId('sv_nombre').value=''; byId('sv_precio').value='';
+      renderServicios();
+    }
+  });
+
+  // CONFIG (branding + integraciones)
+  byId('cfg_logo')?.addEventListener('change', onLogoChange);
+  byId('cfg_bg')?.addEventListener('change', onBgChange);
+  byId('cfg_name')?.addEventListener('input',  e=>cfgSave({name:e.target.value}));
+  byId('cfg_sub')?.addEventListener('input',   e=>cfgSave({sub:e.target.value}));
+  byId('cfg_bg_op')?.addEventListener('input', e=>cfgSave({bgOpacity:+e.target.value}));
+  byId('cfg_primary')?.addEventListener('input', e=>cfgSave({primary:e.target.value}));
+  byId('cfg_accent')?.addEventListener('input',  e=>cfgSave({accent:e.target.value}));
+  byId('cfg_form_url')?.addEventListener('input',e=>cfgSave({formUrl:e.target.value}));
+  byId('cfg_script_url')?.addEventListener('input',e=>cfgSave({scriptUrl:e.target.value}));
+  byId('cfg_wa_phone')?.addEventListener('input',e=>cfgSave({waPhone:e.target.value}));
+  byId('cfg_wa_fact')?.addEventListener('input', e=>cfgSave({waFacto:e.target.value}));
+  byId('cfg_maps')?.addEventListener('input',    e=>cfgSave({maps:e.target.value}));
+  byId('btnExportConfig')?.addEventListener('click', exportConfig);
+  byId('cfgImport')?.addEventListener('change', e=>e.target.files[0] && importConfig(e.target.files[0]));
+}
+
+/* ============================================================
+   INICIO (boot final)
    ============================================================ */
 function boot(){
-  ensureDefaults();
+  ensureDefaults();               // datos base (usuarios, empleados, cfg, etc.)
+  ensureDefaults_patchFormIDs();  // mapping Google Form + formResponse
   applyBrand();
   renderEmpleadosTabla();
   renderEmpleadosSelects();
@@ -1340,65 +1534,8 @@ function boot(){
   analyticsKPIs(); analyticsChart30();
   bindUI();
 }
-window.addEventListener('DOMContentLoaded', boot);
-
-/* ============================================================
-   GOOGLE FORM PATCH (usa tus entry.xxxxx reales)
-   ============================================================ */
-function ensureDefaults_patchFormIDs(){
-  const cfg = load(K.CFG, {}) || {};
-  cfg.formUrl = cfg.formUrl || "https://docs.google.com/forms/d/e/1FAIpQLSf1UXh09WVyDvNF0tvzPEUQGsArmm81Ice53xoWgzpY-8Ae8g/formResponse";
-  cfg.formMap = cfg.formMap || {
-    nombre:   "entry.126099183",
-    tel:      "entry.885012759",
-    fecha:    "entry.2059036119",
-    hora:     "entry.805023101",
-    servicio: "entry.1764664020",
-    tecnica:  "entry.1003942216",
-    correo:   "entry.1481210954"
-  };
-  save(K.CFG, cfg);
-}
-function toMMDDYY(iso){
-  if(!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso;
-  const [y,m,d] = iso.split('-');
-  return `${m}/${d}/${y.slice(2)}`;
-}
-async function citaGoogle(){
-  const cfg=load(K.CFG,{});
-  if(!cfg.formUrl){ alert('Configura la URL de formResponse.'); return; }
-  const m=cfg.formMap||{};
-  const nombre=byId('a_nombre').value.trim();
-  const tel=byId('a_tel').value.trim();
-  const emp=byId('a_emp').value;
-  const srv=byId('a_srv').value.trim();
-  const fechaISO=byId('a_fecha').value;
-  const hora24=byId('a_hora').value;
-  if(!nombre||!tel||!emp||!fechaISO||!hora24){ alert('Completa los campos.'); return; }
-  const emps=load(K.EMP,[]); 
-  const empName=(emps.find(e=>e.id===emp)||{}).nombre||'';
-  const fechaForm = toMMDDYY(fechaISO);
-  const horaForm  = hora24;
-  const payload = new URLSearchParams({
-    [m.nombre]:   nombre,
-    [m.tel]:      tel,
-    [m.fecha]:    fechaForm,
-    [m.hora]:     horaForm,
-    [m.servicio]: srv,
-    [m.tecnica]:  empName,
-    [m.correo]:   ""
-  });
-  try{
-    await fetch(cfg.formUrl,{method:'POST', body:payload, mode:'no-cors'});
-    alert('Cita enviada a Google Form.');
-  }catch(e){ console.error(e); alert('Error enviando al Form.'); }
-}
-const __boot__orig = boot;
-window.boot = function(){
-  ensureDefaults();
-  ensureDefaults_patchFormIDs();
-  __boot__orig();
-};
+// Importante: llama SIEMPRE a la versión final de boot (aunque sea reasignada)
+window.addEventListener('DOMContentLoaded', ()=> boot());
 </script>
 </body>
 </html>
