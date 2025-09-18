@@ -1537,6 +1537,95 @@ function boot(){
 // Importante: llama SIEMPRE a la versión final de boot (aunque sea reasignada)
 window.addEventListener('DOMContentLoaded', ()=> boot());
 
+/* ======== RESCUE PATCH: arranque seguro + diagnóstico ======== */
+(function(){
+  // 1) HUD de diagnóstico
+  const hud = document.createElement('div');
+  hud.id = '__app_hud__';
+  hud.style.cssText = 'position:fixed;right:10px;bottom:10px;z-index:99999;padding:8px 10px;border-radius:8px;font:12px/1.2 ui-sans-serif,system-ui;background:#111827;color:#fff;border:1px solid #334155;box-shadow:0 8px 24px rgba(0,0,0,.35)';
+  hud.textContent = 'Iniciando...';
+  document.body.appendChild(hud);
+  function ok(msg){ hud.style.background='#065f46'; hud.style.borderColor='#10b981'; hud.textContent='✅ '+msg; }
+  function bad(msg){ hud.style.background='#7f1d1d'; hud.style.borderColor='#ef4444'; hud.textContent='❌ '+msg; }
+
+  // 2) Garantizar helpers básicos
+  window.byId = window.byId || (id=>document.getElementById(id));
+  window.$ = window.$ || (s=>document.querySelector(s));
+  window.$$ = window.$$ || (s=>document.querySelectorAll(s));
+
+  // 3) Garantizar storage helpers + claves
+  try{
+    window.load = window.load || ((k,d=null)=>JSON.parse(localStorage.getItem(k)||JSON.stringify(d)));
+    window.save = window.save || ((k,v)=>localStorage.setItem(k,JSON.stringify(v)));
+  }catch(e){ /* safari private mode, etc. */ }
+
+  window.K = window.K || {
+    USERS:'sp_users', SESSION:'sp_session', EMP:'sp_empleados',
+    CITAS:'sp_citas', FACTS:'sp_facturas', CFG:'sp_config',
+    SVC:'sp_servicios', COUNTER_F:'sp_fact_counter'
+  };
+
+  // 4) Stubs (no-op) si faltan — evitan que crashee boot()
+  const stubs = [
+    'ensureDefaults','applyBrand','renderEmpleadosTabla','renderEmpleadosSelects',
+    'renderServicios','renderCitas','renderFacturas','facturaNueva',
+    'analyticsKPIs','analyticsChart30','bindUI','show'
+  ];
+  stubs.forEach(fn=>{
+    if(typeof window[fn] !== 'function'){
+      console.warn('[RESCUE] faltaba', fn, '→ creando stub.');
+      window[fn] = function(){ /* no-op */ };
+    }
+  });
+
+  // 5) Asegurar login mínimo para no romper show('screen-login')
+  if(typeof window.logout !== 'function'){
+    window.logout = function(){ try{ localStorage.removeItem(K.SESSION);}catch(e){}; window.show('screen-login'); };
+  }
+  if(typeof window.login !== 'function'){
+    window.login = function(u,p){
+      let users = load(K.USERS, null);
+      if(!Array.isArray(users) || users.length===0){
+        users = [{user:'admin',pass:'admin123',role:'admin'},{user:'usuario',pass:'user123',role:'usuario'}];
+        save(K.USERS, users);
+      }
+      const uobj = users.find(x=>x.user===u && x.pass===p);
+      if(!uobj) return false;
+      save(K.SESSION,{user:uobj.user,role:uobj.role,ts:Date.now()});
+      const av=byId('whoami'); if(av) av.title=`${uobj.user} (${uobj.role})`;
+      return true;
+    };
+  }
+
+  // 6) Envolver boot() con try/catch y reportar error si ocurre
+  function runBootSafe(){
+    try{
+      if(typeof window.boot !== 'function'){
+        // definir un boot mínimo que muestre login
+        window.boot = function(){
+          const ses = load(K.SESSION,null);
+          if(ses){ byId('whoami') && (byId('whoami').title=`${ses.user} (${ses.role})`); window.show && window.show('screen-home'); }
+          else window.show && window.show('screen-login');
+        };
+        console.warn('[RESCUE] boot no existía. Se creó uno básico.');
+      }
+      window.boot(); // ejecutar versión actual (o la básica)
+      ok('App iniciada');
+    }catch(err){
+      console.error('[RESCUE] error en boot:', err);
+      bad('Error: '+ (err && err.message ? err.message : err));
+      // mostrar un alert amigable y cómo limpiar
+      setTimeout(()=>alert('Hubo un error iniciando la app.\n\nDetalle consola: '+err+'\n\nSugerencia rápida: abre la consola y pega:\nlocalStorage.clear();\nRecarga la página.'), 150);
+    }
+  }
+
+  // 7) Usar DOMContentLoaded → boot final
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', runBootSafe);
+  }else{
+    runBootSafe();
+  }
+})();
 </script>
 </body>
 </html>
